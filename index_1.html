@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="E85 Trip">
+<meta name="theme-color" content="#0f1115">
+<title>E85 Trip Planner</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --card:#1f232c; --line:#2b303b;
+    --text:#e9ecf1; --muted:#9aa3b2; --accent:#3ddc84; --warn:#ffb020; --bad:#ff5a5f; --blue:#4da3ff;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  body{display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
+  #map{height:42vh;min-height:220px;flex:none;background:#1a1d24}
+  #panel{flex:1;overflow-y:auto;background:var(--panel);padding:0 14px calc(18px + env(safe-area-inset-bottom))}
+  .tabs{position:sticky;top:0;z-index:5;display:flex;gap:6px;background:var(--panel);padding:10px 0 8px;border-bottom:1px solid var(--line)}
+  .tabs button{flex:1;padding:9px 0;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--muted);font-weight:600;font-size:14px}
+  .tabs button.on{background:var(--accent);color:#08130c;border-color:var(--accent)}
+  .view{display:none;padding-top:12px}
+  .view.on{display:block}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;text-transform:uppercase;letter-spacing:.04em}
+  input{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:16px}
+  .row{display:flex;gap:10px}.row>div{flex:1}
+  .btn{display:block;width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;background:var(--accent);color:#08130c;font-weight:700;font-size:16px}
+  .btn.alt{background:var(--card);color:var(--text);border:1px solid var(--line)}
+  .btn:disabled{opacity:.5}
+  .inline{display:flex;gap:8px;align-items:stretch}
+  .inline input{flex:1}
+  .inline button{flex:none;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--blue);font-weight:600}
+  .status{margin-top:10px;font-size:13px;color:var(--muted);min-height:18px}
+  .status.err{color:var(--bad)}
+  .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 6px}
+  .stat{background:var(--card);border-radius:12px;padding:10px;text-align:center}
+  .stat b{display:block;font-size:20px}.stat span{font-size:11px;color:var(--muted);text-transform:uppercase}
+  .stop{background:var(--card);border-radius:12px;padding:12px;margin-top:10px;border-left:4px solid var(--accent)}
+  .stop.gap{border-left-color:var(--warn)}
+  .stop.dest{border-left-color:var(--blue)}
+  .stop h3{margin:0 0 2px;font-size:16px}
+  .stop .sub{color:var(--muted);font-size:13px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chip{font-size:12px;padding:3px 8px;border-radius:999px;background:#2a2f3a;color:var(--text)}
+  .chip.low{background:#3a2a12;color:var(--warn)}
+  .chip.crit{background:#3a1416;color:var(--bad)}
+  .links{display:flex;gap:8px;margin-top:10px}
+  .links a{flex:1;text-align:center;padding:8px;border-radius:9px;background:#2a2f3a;color:var(--blue);text-decoration:none;font-size:13px;font-weight:600}
+  .leg{color:var(--muted);font-size:12px;text-align:center;margin-top:8px}
+  .fuelbar{height:14px;border-radius:7px;background:#2a2f3a;overflow:hidden;margin:6px 0 2px}
+  .fuelbar i{display:block;height:100%;background:var(--accent);transition:width .4s}
+  .big{font-size:28px;font-weight:800}
+  .card{background:var(--card);border-radius:12px;padding:12px;margin-top:10px}
+  .muted{color:var(--muted);font-size:13px}
+  .note{font-size:12px;color:var(--muted);margin-top:14px}
+  .note a{color:var(--blue)}
+  .pctbtns{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:8px}
+  .pctbtns button{padding:9px 0;border-radius:9px;border:1px solid var(--line);background:#2a2f3a;color:var(--text);font-weight:600}
+  .sugg{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-top:4px;overflow:hidden}
+  .sugg div{padding:9px 12px;border-bottom:1px solid var(--line);font-size:14px}
+  .sugg div:last-child{border-bottom:0}
+  .leaflet-container{font:inherit}
+  .leaflet-popup-content{color:#111}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <div class="tabs">
+    <button data-tab="plan" class="on">Plan</button>
+    <button data-tab="drive">Drive</button>
+    <button data-tab="settings">Truck</button>
+  </div>
+
+  <!-- PLAN -->
+  <section id="v-plan" class="view on">
+    <label>From</label>
+    <div class="inline">
+      <input id="from" placeholder="City, address, or lat,lon" autocomplete="off">
+      <button id="useLoc" type="button">📍 Me</button>
+    </div>
+    <div id="from-sugg"></div>
+    <label>To</label>
+    <input id="to" placeholder="City, address, or lat,lon" autocomplete="off">
+    <div id="to-sugg"></div>
+    <label>Fuel in tank now (%)</label>
+    <input id="startPct" type="number" inputmode="numeric" min="1" max="100" value="100">
+    <button class="btn" id="planBtn">Plan E85 stops</button>
+    <div class="status" id="planStatus"></div>
+    <div id="planOut"></div>
+  </section>
+
+  <!-- DRIVE -->
+  <section id="v-drive" class="view">
+    <div class="card">
+      <div class="muted">Estimated fuel</div>
+      <div class="big" id="dFuel">—</div>
+      <div class="fuelbar"><i id="dBar" style="width:0%"></i></div>
+      <div class="muted" id="dRange">Set your fuel level to start.</div>
+      <div class="pctbtns">
+        <button data-pct="100">Full</button><button data-pct="75">¾</button>
+        <button data-pct="50">½</button><button data-pct="25">¼</button>
+        <button data-pct="custom">#</button>
+      </div>
+    </div>
+    <button class="btn" id="gpsBtn">Start live mode</button>
+    <div class="status" id="driveStatus"></div>
+    <div id="driveOut"></div>
+    <button class="btn alt" id="replanBtn" style="display:none">Re-plan from here</button>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="v-settings" class="view">
+    <div class="row">
+      <div><label>Tank (gal)</label><input id="tank" type="number" step="0.1" inputmode="decimal"></div>
+      <div><label>E85 MPG</label><input id="mpg" type="number" step="0.1" inputmode="decimal"></div>
+    </div>
+    <div class="row">
+      <div><label>Reserve (%)</label><input id="reserve" type="number" inputmode="numeric"></div>
+      <div><label>Max detour (mi)</label><input id="detour" type="number" step="0.5" inputmode="decimal"></div>
+    </div>
+    <label>NREL API key</label>
+    <input id="apikey" placeholder="DEMO_KEY" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="btn" id="saveBtn">Save</button>
+    <div class="status" id="setStatus"></div>
+    <p class="note">
+      <b>Defaults:</b> 2010 F-150 SVT Raptor, 26 gal tank. E85 MPG is a starting guess.
+      Track a couple of fill-ups (miles ÷ gallons) and put your real number here, since it sets every range calculation.<br><br>
+      <b>Reserve</b> is the minimum % the planner will let you arrive with. <b>Max detour</b> is how far off the route a station can be.<br><br>
+      <b>API key:</b> station data comes from the U.S. DOE Alternative Fuels Data Center. <code>DEMO_KEY</code> is rate-limited, so get a free key in a minute at
+      <a href="https://developer.nrel.gov/signup/" target="_blank" rel="noopener">developer.nrel.gov/signup</a>.<br><br>
+      Routing: OSRM · Geocoding: OpenStreetMap Nominatim · Map © OpenStreetMap, © CARTO.
+      Station listings can be out of date, so call ahead on long empty stretches.
+    </p>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// ===================== PLANNER START (pure logic, no DOM) =====================
+const R_MI = 3958.8;
+const ROAD_FACTOR = 1.3;          // straight-line offset -> road miles, each way
+function toRad(x){ return x * Math.PI / 180; }
+function hav(a, b){                // a,b = [lat, lon]  -> miles
+  const dLat = toRad(b[0]-a[0]), dLon = toRad(b[1]-a[1]);
+  const s = Math.sin(dLat/2)**2 + Math.cos(toRad(a[0]))*Math.cos(toRad(b[0]))*Math.sin(dLon/2)**2;
+  return 2 * R_MI * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+function cumulative(coords, targetTotal){
+  const c = [0];
+  for (let i = 1; i < coords.length; i++) c.push(c[i-1] + hav(coords[i-1], coords[i]));
+  const total = c[c.length-1];
+  if (targetTotal && total > 0){ const f = targetTotal / total; for (let i = 0; i < c.length; i++) c[i] *= f; }
+  return c;
+}
+// Nearest route vertex to a point -> along-route mile and straight-line offset (mi)
+function projectPoint(pt, coords, cum){
+  const cosLat = Math.cos(toRad(pt[0]));
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < coords.length; i++){
+    const dy = coords[i][0]-pt[0], dx = (coords[i][1]-pt[1])*cosLat;
+    const d = dx*dx + dy*dy;
+    if (d < bd){ bd = d; bi = i; }
+  }
+  return { mile: cum[bi], off: hav(pt, coords[bi]), idx: bi };
+}
+function sampleCoords(coords, maxPts){
+  if (coords.length <= maxPts) return coords.slice();
+  const step = (coords.length - 1) / (maxPts - 1), out = [];
+  for (let i = 0; i < maxPts; i++) out.push(coords[Math.round(i*step)]);
+  return out;
+}
+// Greedy "go as far as you safely can, then stop" planner.
+// stations: [{mile, off, ...}]  cfg: {tank, mpg, reservePct, startPct, maxDetour}
+function planStops(stations, total, cfg){
+  const range = cfg.tank * cfg.mpg;
+  const reserve = range * cfg.reservePct / 100;
+  const cands = stations.filter(s => s.off <= cfg.maxDetour).sort((a,b) => a.mile - b.mile);
+  let pos = 0, fuel = range * Math.min(100, Math.max(0, cfg.startPct)) / 100;
+  const stops = [];
+  let guard = 0;
+  while (pos + fuel - reserve < total && guard++ < 200){
+    const reach = fuel - reserve;
+    const cost = s => (s.mile - pos) + s.off * ROAD_FACTOR;
+    const reachable = cands.filter(s => s.mile > pos + 0.5 && cost(s) <= reach);
+    // Already at/below reserve: head to the closest E85 you can still physically reach
+    const emergency = reachable.length ? null :
+      cands.filter(s => s.mile > pos + 0.5 && cost(s) <= fuel - range * 0.03).sort((a,b) => cost(a) - cost(b))[0];
+    if (emergency){
+      const arrive = fuel - cost(emergency);
+      stops.push({ type:'e85', station:emergency, mile:emergency.mile, low:true,
+                   arrivePct: arrive / range * 100, gallons: (range - arrive) / cfg.mpg });
+      fuel = range - emergency.off * ROAD_FACTOR; pos = emergency.mile;
+    } else if (reachable.length){
+      const far = Math.max(...reachable.map(s => s.mile));
+      // among stations near the farthest reachable point, take the one closest to the road
+      const best = reachable.filter(s => s.mile >= far - 8).sort((a,b) => a.off - b.off)[0];
+      const arrive = fuel - cost(best);
+      stops.push({ type:'e85', station:best, mile:best.mile,
+                   arrivePct: arrive / range * 100, gallons: (range - arrive) / cfg.mpg });
+      fuel = range - best.off * ROAD_FACTOR;   // full tank, minus getting back to the route
+      pos = best.mile;
+    } else {
+      // No E85 in range: fill with regular gas before hitting reserve
+      if (reach <= 1){
+        stops.push({ type:'gap', mile:pos, fromMile:pos, arrivePct: fuel/range*100, gallons:(range-fuel)/cfg.mpg, stuck:true });
+        fuel = range; continue;
+      }
+      const gm = pos + reach;
+      stops.push({ type:'gap', mile:gm, fromMile:pos, arrivePct: cfg.reservePct, gallons:(range - reserve)/cfg.mpg });
+      fuel = range; pos = gm;
+    }
+  }
+  return { stops, range, reserve, arriveDestPct: (fuel - (total - pos)) / range * 100 };
+}
+// ===================== PLANNER END =====================
+
+// ---------- state ----------
+const DEFAULTS = { tank:26, mpg:10, reserve:15, detour:5, apikey:'' };
+let cfg = loadCfg();
+let plan = null;           // {coords, cum, total, stations, result, from, to}
+let map, routeLayer, stationLayer, meMarker;
+let drive = { watchId:null, last:null, anchorPct:null, driven:0, pos:null, lastNearbyFetch:null, nearby:[], wake:null };
+
+function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+function loadCfg(){
+  try { return Object.assign({}, DEFAULTS, JSON.parse(lsGet('e85cfg') || '{}')); } catch(e){ return Object.assign({}, DEFAULTS); }
+}
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const apiKey = () => (cfg.apikey || '').trim() || 'DEMO_KEY';
+const rangeMi = () => cfg.tank * cfg.mpg;
+
+// ---------- map ----------
+function initMap(){
+  map = L.map('map', { zoomControl:false }).setView([37.35, -121.95], 7);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19, subdomains:'abcd',
+    attribution: '&copy; OpenStreetMap &copy; CARTO'
+  }).addTo(map);
+  L.control.zoom({ position:'topright' }).addTo(map);
+  stationLayer = L.layerGroup().addTo(map);
+}
+
+// ---------- tabs ----------
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === 'v-' + b.dataset.tab));
+  setTimeout(() => map.invalidateSize(), 50);
+});
+
+// ---------- settings ----------
+function fillSettings(){
+  $('tank').value = cfg.tank; $('mpg').value = cfg.mpg; $('reserve').value = cfg.reserve;
+  $('detour').value = cfg.detour; $('apikey').value = cfg.apikey;
+}
+$('saveBtn').onclick = () => {
+  const n = (id, min, max, d) => { const v = parseFloat($(id).value); return isFinite(v) ? Math.min(max, Math.max(min, v)) : d; };
+  cfg = { tank:n('tank',5,80,26), mpg:n('mpg',3,40,10), reserve:n('reserve',0,50,15),
+          detour:n('detour',0.5,30,5), apikey:$('apikey').value.trim() };
+  lsSet('e85cfg', JSON.stringify(cfg));
+  fillSettings();
+  setStatus('setStatus', `Saved. Full-tank range ≈ ${Math.round(rangeMi())} mi on E85.`);
+  if (plan) renderPlan(); updateDrive();
+};
+
+function setStatus(id, msg, err){ const el = $(id); el.textContent = msg || ''; el.classList.toggle('err', !!err); }
+
+// ---------- geocoding ----------
+const coordRe = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/;
+const picked = { from:null, to:null };
+async function geocode(q){
+  const m = q.match(coordRe);
+  if (m) return [{ lat:+m[1], lon:+m[2], name:`${m[1]}, ${m[2]}` }];
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=us&q=' + encodeURIComponent(q);
+  const r = await fetch(url, { headers:{ 'Accept':'application/json' } });
+  if (!r.ok) throw new Error('Address lookup failed (' + r.status + ')');
+  const j = await r.json();
+  return j.map(x => ({ lat:+x.lat, lon:+x.lon, name:x.display_name }));
+}
+function wireSuggest(field){
+  let t;
+  $(field).addEventListener('input', () => {
+    picked[field] = null;
+    clearTimeout(t);
+    const q = $(field).value.trim();
+    if (q.length < 4 || coordRe.test(q)) { $(field + '-sugg').innerHTML = ''; return; }
+    t = setTimeout(async () => {
+      try {
+        const res = await geocode(q);
+        const box = $(field + '-sugg');
+        box.innerHTML = res.length ? '<div class="sugg">' + res.map((x,i) => `<div data-i="${i}">${esc(x.name)}</div>`).join('') + '</div>' : '';
+        box.querySelectorAll('[data-i]').forEach(d => d.onclick = () => {
+          const x = res[+d.dataset.i]; picked[field] = x; $(field).value = x.name.split(',').slice(0,3).join(','); box.innerHTML = '';
+        });
+      } catch(e){}
+    }, 1000);   // Nominatim asks for <= 1 request/sec
+  });
+}
+wireSuggest('from'); wireSuggest('to');
+async function resolve(field){
+  if (picked[field]) return picked[field];
+  const q = $(field).value.trim();
+  if (!q) throw new Error(`Enter a "${field}" location.`);
+  const res = await geocode(q);
+  if (!res.length) throw new Error(`Couldn't find "${q}".`);
+  return res[0];
+}
+function getPosition(){
+  return new Promise((ok, bad) => {
+    if (!navigator.geolocation) return bad(new Error('GPS not available in this browser.'));
+    navigator.geolocation.getCurrentPosition(p => ok(p), e => bad(new Error('Location blocked: ' + e.message)), { enableHighAccuracy:true, timeout:15000 });
+  });
+}
+$('useLoc').onclick = async () => {
+  try {
+    setStatus('planStatus', 'Getting your location…');
+    const p = await getPosition();
+    picked.from = { lat:p.coords.latitude, lon:p.coords.longitude, name:'My location' };
+    $('from').value = 'My location'; setStatus('planStatus', '');
+  } catch(e){ setStatus('planStatus', e.message, true); }
+};
+
+// ---------- routing + stations ----------
+async function getRoute(a, b){
+  const url = `https://router.project-osrm.org/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=full&geometries=geojson`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('Routing failed (' + r.status + ')');
+  const j = await r.json();
+  if (!j.routes || !j.routes.length) throw new Error('No driving route found.');
+  const rt = j.routes[0];
+  return { coords: rt.geometry.coordinates.map(c => [c[1], c[0]]), miles: rt.distance / 1609.344, hours: rt.duration / 3600 };
+}
+function nrelError(r){
+  if (r.status === 429) return new Error('Station API limit hit. Add your free NREL key in the Truck tab.');
+  if (r.status === 403) return new Error('NREL API key rejected. Check it in the Truck tab.');
+  return new Error('Station lookup failed (' + r.status + ')');
+}
+async function stationsAlongRoute(coords, corridorMi){
+  const pts = sampleCoords(coords, 250);
+  const wkt = 'LINESTRING(' + pts.map(p => p[1].toFixed(5) + ' ' + p[0].toFixed(5)).join(', ') + ')';
+  const body = new URLSearchParams({ route:wkt, distance:String(corridorMi), fuel_type:'E85', status:'E', access:'public' });
+  try {
+    const r = await fetch('https://developer.nrel.gov/api/alt-fuel-stations/v1/nearby-route.json?api_key=' + encodeURIComponent(apiKey()), { method:'POST', body });
+    if (r.status === 429 || r.status === 403) throw nrelError(r);
+    if (!r.ok) throw new Error('route-endpoint ' + r.status);
+    const j = await r.json();
+    return j.fuel_stations || [];
+  } catch(e){
+    if (/API (limit|key)/.test(e.message)) throw e;
+    return stationsBySampling(coords, corridorMi);   // fallback: search circles along the route
+  }
+}
+async function stationsBySampling(coords, corridorMi){
+  const cum = cumulative(coords), total = cum[cum.length-1], spacing = 60;
+  const radius = Math.ceil(Math.sqrt((spacing/2)**2 + corridorMi**2)) + 2;
+  const seen = new Map();
+  for (let m = 0, i = 0; m <= total + spacing; m += spacing){
+    while (i < cum.length - 1 && cum[i] < m) i++;
+    const p = coords[i];
+    const url = `https://developer.nrel.gov/api/alt-fuel-stations/v1/nearest.json?api_key=${encodeURIComponent(apiKey())}&latitude=${p[0]}&longitude=${p[1]}&radius=${radius}&fuel_type=E85&status=E&access=public&limit=100`;
+    const r = await fetch(url);
+    if (!r.ok) throw nrelError(r);
+    const j = await r.json();
+    (j.fuel_stations || []).forEach(s => seen.set(s.id, s));
+  }
+  return [...seen.values()];
+}
+async function stationsNear(lat, lon, radius){
+  const url = `https://developer.nrel.gov/api/alt-fuel-stations/v1/nearest.json?api_key=${encodeURIComponent(apiKey())}&latitude=${lat}&longitude=${lon}&radius=${radius}&fuel_type=E85&status=E&access=public&limit=25`;
+  const r = await fetch(url);
+  if (!r.ok) throw nrelError(r);
+  return (await r.json()).fuel_stations || [];
+}
+function normStation(s){
+  return { id:s.id, name:s.station_name, lat:+s.latitude, lon:+s.longitude,
+           addr:[s.street_address, s.city, s.state].filter(Boolean).join(', '),
+           hours:s.access_days_time || '', phone:s.station_phone || '', blender: !!s.e85_blender_pump };
+}
+
+// ---------- plan ----------
+$('planBtn').onclick = async () => {
+  const btn = $('planBtn'); btn.disabled = true; $('planOut').innerHTML = '';
+  try {
+    setStatus('planStatus', 'Finding locations…');
+    const from = await resolve('from');
+    const to = await resolve('to');
+    setStatus('planStatus', 'Routing…');
+    const rt = await getRoute(from, to);
+    setStatus('planStatus', 'Pulling E85 stations along the route…');
+    const raw = await stationsAlongRoute(rt.coords, Math.max(cfg.detour, 2));
+    const cum = cumulative(rt.coords, rt.miles);
+    const stations = raw.map(normStation).filter(s => isFinite(s.lat) && isFinite(s.lon))
+      .map(s => Object.assign(s, projectPoint([s.lat, s.lon], rt.coords, cum)));
+    plan = { coords:rt.coords, cum, total:rt.miles, hours:rt.hours, stations, from, to,
+             startPct: Math.min(100, Math.max(1, parseFloat($('startPct').value) || 100)) };
+    setStatus('planStatus', `${stations.length} E85 station${stations.length === 1 ? '' : 's'} found near the route.`);
+    renderPlan();
+    if (drive.anchorPct == null) setFuel(plan.startPct);
+  } catch(e){
+    setStatus('planStatus', e.message, true);
+  } finally { btn.disabled = false; }
+};
+
+function pctChip(p){
+  const cls = p < 10 ? 'crit' : p < 20 ? 'low' : '';
+  return `<span class="chip ${cls}">Arrive ${Math.max(0, Math.round(p))}%</span>`;
+}
+function navLinks(lat, lon){
+  return `<div class="links">
+    <a href="https://maps.apple.com/?daddr=${lat},${lon}&dirflg=d" target="_blank" rel="noopener">Apple Maps</a>
+    <a href="https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving" target="_blank" rel="noopener">Google Maps</a>
+  </div>`;
+}
+function pointAtMile(mile){
+  const c = plan.cum; let i = 0;
+  while (i < c.length - 1 && c[i] < mile) i++;
+  return plan.coords[i];
+}
+function renderPlan(){
+  if (!plan) return;
+  const res = planStops(plan.stations, plan.total, { tank:cfg.tank, mpg:cfg.mpg, reservePct:cfg.reserve, startPct:plan.startPct, maxDetour:cfg.detour });
+  plan.result = res;
+  const e85 = res.stops.filter(s => s.type === 'e85').length, gaps = res.stops.filter(s => s.type === 'gap').length;
+  const h = Math.floor(plan.hours), mins = Math.round((plan.hours - h) * 60);
+  let html = `<div class="summary">
+    <div class="stat"><b>${Math.round(plan.total)}</b><span>miles</span></div>
+    <div class="stat"><b>${h}h ${mins}m</b><span>drive</span></div>
+    <div class="stat"><b>${e85}${gaps ? ' +' + gaps : ''}</b><span>${gaps ? 'E85 + gas' : 'E85 stops'}</span></div>
+  </div>`;
+  if (gaps) html += `<div class="card" style="color:var(--warn)">⚠️ ${gaps} stretch${gaps>1?'es':''} with no E85 in range. Fill with regular gas there (fine for a flex-fuel truck).</div>`;
+  let prev = 0;
+  res.stops.forEach((s, i) => {
+    html += `<div class="leg">↓ ${Math.round(s.mile - prev)} mi</div>`;
+    if (s.type === 'e85'){
+      const st = s.station;
+      html += `<div class="stop">
+        <h3>${i+1}. ${esc(st.name)}</h3>
+        <div class="sub">${esc(st.addr)}</div>
+        <div class="chips">
+          <span class="chip">Mile ${Math.round(s.mile)}</span>${pctChip(s.arrivePct)}
+          <span class="chip">~${s.gallons.toFixed(1)} gal</span>
+          ${st.off > 0.3 ? `<span class="chip">${st.off.toFixed(1)} mi off route</span>` : ''}
+          ${st.blender ? '<span class="chip">Blender pump</span>' : ''}
+        </div>
+        ${st.hours ? `<div class="sub" style="margin-top:6px">🕒 ${esc(st.hours)}</div>` : ''}
+        ${st.phone ? `<div class="sub">📞 ${esc(st.phone)}</div>` : ''}
+        ${navLinks(st.lat, st.lon)}
+      </div>`;
+    } else {
+      const p = pointAtMile(s.mile);
+      html += `<div class="stop gap">
+        <h3>${i+1}. Gas stop near mile ${Math.round(s.mile)}</h3>
+        <div class="sub" id="gap-${i}">${s.stuck ? 'Not enough fuel to reach any station. Get fuel as soon as you can.' : 'No E85 within range here. Top off with regular gas before this point.'}</div>
+        <div class="chips">${pctChip(s.arrivePct)}<span class="chip">~${s.gallons.toFixed(1)} gal</span></div>
+        <div class="links"><a href="https://www.google.com/maps/search/gas+station/@${p[0]},${p[1]},12z" target="_blank" rel="noopener">Gas stations near here</a></div>
+      </div>`;
+      reverseName(p).then(n => { const el = $('gap-' + i); if (el && n) el.textContent = `Around ${n}. No E85 within range here, so top off with regular gas.`; });
+    }
+    prev = s.mile;
+  });
+  html += `<div class="leg">↓ ${Math.round(plan.total - prev)} mi</div>
+    <div class="stop dest"><h3>🏁 ${esc(plan.to.name.split(',').slice(0,2).join(','))}</h3>
+    <div class="chips">${pctChip(res.arriveDestPct)}</div></div>`;
+  $('planOut').innerHTML = html;
+  drawPlan();
+}
+const revCache = new Map();
+async function reverseName(p){
+  const k = p[0].toFixed(2) + ',' + p[1].toFixed(2);
+  if (revCache.has(k)) return revCache.get(k);
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=10&lat=${p[0]}&lon=${p[1]}`);
+    const j = await r.json(); const a = j.address || {};
+    const n = [a.city || a.town || a.village || a.county, a.state].filter(Boolean).join(', ');
+    revCache.set(k, n); return n;
+  } catch(e){ return ''; }
+}
+function drawPlan(){
+  if (routeLayer) map.removeLayer(routeLayer);
+  stationLayer.clearLayers();
+  routeLayer = L.polyline(plan.coords, { color:'#4da3ff', weight:5, opacity:.85 }).addTo(map);
+  const chosen = new Set(plan.result.stops.filter(s => s.type === 'e85').map(s => s.station.id));
+  plan.stations.filter(s => s.off <= cfg.detour && !chosen.has(s.id)).forEach(s => {
+    L.circleMarker([s.lat, s.lon], { radius:5, color:'#9aa3b2', fillColor:'#9aa3b2', fillOpacity:.8, weight:1 })
+      .bindPopup(`<b>${esc(s.name)}</b><br>${esc(s.addr)}<br>Mile ${Math.round(s.mile)}`).addTo(stationLayer);
+  });
+  let n = 0;
+  plan.result.stops.forEach(s => {
+    n++;
+    const ll = s.type === 'e85' ? [s.station.lat, s.station.lon] : pointAtMile(s.mile);
+    const color = s.type === 'e85' ? '#3ddc84' : '#ffb020';
+    L.marker(ll, { icon: L.divIcon({ className:'', iconSize:[26,26], iconAnchor:[13,13],
+      html:`<div style="width:26px;height:26px;border-radius:50%;background:${color};color:#08130c;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid #fff;font-size:13px">${n}</div>` }) })
+      .bindPopup(s.type === 'e85' ? `<b>${esc(s.station.name)}</b><br>Arrive ${Math.round(s.arrivePct)}%` : 'Gas stop').addTo(stationLayer);
+  });
+  map.fitBounds(routeLayer.getBounds(), { padding:[20,20] });
+}
+
+// ---------- live drive mode ----------
+function setFuel(pct){
+  drive.anchorPct = Math.min(100, Math.max(0, pct)); drive.driven = 0;
+  lsSet('e85fuel', JSON.stringify({ pct:drive.anchorPct, t:Date.now() }));
+  updateDrive();
+}
+function currentFuelPct(){
+  if (drive.anchorPct == null) return null;
+  return Math.max(0, drive.anchorPct - drive.driven / rangeMi() * 100);
+}
+document.querySelectorAll('[data-pct]').forEach(b => b.onclick = () => {
+  if (b.dataset.pct === 'custom'){
+    const box = $('driveOut');
+    const wrap = document.createElement('div'); wrap.className = 'card';
+    wrap.innerHTML = '<label style="margin-top:0">Fuel % now</label><div class="inline"><input id="custPct" type="number" inputmode="numeric" min="0" max="100"><button id="custOk">Set</button></div>';
+    box.prepend(wrap);
+    $('custOk').onclick = () => { const v = parseFloat($('custPct').value); if (isFinite(v)) setFuel(v); wrap.remove(); };
+    $('custPct').focus();
+  } else setFuel(+b.dataset.pct);
+});
+
+$('gpsBtn').onclick = async () => {
+  if (drive.watchId != null){ stopGps(); return; }
+  if (!navigator.geolocation){ setStatus('driveStatus', 'GPS not available in this browser.', true); return; }
+  if (drive.anchorPct == null) setFuel(plan ? plan.startPct : 100);
+  drive.watchId = navigator.geolocation.watchPosition(onFix,
+    e => setStatus('driveStatus', 'GPS error: ' + e.message, true),
+    { enableHighAccuracy:true, maximumAge:5000, timeout:30000 });
+  $('gpsBtn').textContent = 'Stop live mode';
+  setStatus('driveStatus', 'Waiting for GPS…');
+  try { if ('wakeLock' in navigator) drive.wake = await navigator.wakeLock.request('screen'); } catch(e){}
+};
+function stopGps(){
+  if (drive.watchId != null) navigator.geolocation.clearWatch(drive.watchId);
+  drive.watchId = null; drive.last = null;
+  $('gpsBtn').textContent = 'Start live mode';
+  try { drive.wake && drive.wake.release(); } catch(e){}
+  drive.wake = null;
+  setStatus('driveStatus', 'Live mode off.');
+}
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && drive.watchId != null && 'wakeLock' in navigator){
+    try { drive.wake = await navigator.wakeLock.request('screen'); } catch(e){}
+  }
+});
+async function onFix(p){
+  const pt = [p.coords.latitude, p.coords.longitude];
+  if (drive.last){
+    const d = hav(drive.last, pt);
+    if (d > 0.03 && d < 50) { drive.driven += d; drive.last = pt; }   // ignore jitter and teleports
+  } else drive.last = pt;
+  drive.pos = pt;
+  if (!meMarker) meMarker = L.circleMarker(pt, { radius:8, color:'#fff', weight:3, fillColor:'#4da3ff', fillOpacity:1 }).addTo(map);
+  else meMarker.setLatLng(pt);
+  if (!map._userMoved) map.panTo(pt);
+  setStatus('driveStatus', `GPS ±${Math.round(p.coords.accuracy)} m · ${new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}`);
+  await maybeFetchNearby(pt);
+  updateDrive();
+}
+async function maybeFetchNearby(pt){
+  const onRoute = plan && projectPoint(pt, plan.coords, plan.cum).off < 2;
+  if (onRoute) return;               // planned route already has the stations
+  const lf = drive.lastNearbyFetch;
+  if (lf && hav(lf, pt) < 10) return; // re-query every ~10 miles
+  drive.lastNearbyFetch = pt;
+  try {
+    const raw = await stationsNear(pt[0], pt[1], Math.min(100, Math.round(rangeMi())));
+    drive.nearby = raw.map(normStation).map(s => Object.assign(s, { dist: hav(pt, [s.lat, s.lon]) })).sort((a,b) => a.dist - b.dist);
+  } catch(e){ setStatus('driveStatus', e.message, true); }
+}
+
+function updateDrive(){
+  const pct = currentFuelPct();
+  const range = rangeMi(), reserveMi = range * cfg.reserve / 100;
+  if (pct == null){ $('dFuel').textContent = '—'; $('dBar').style.width = '0%'; return; }
+  const left = range * pct / 100, usable = Math.max(0, left - reserveMi);
+  $('dFuel').textContent = Math.round(pct) + '%';
+  $('dBar').style.width = pct + '%';
+  $('dBar').style.background = pct < 15 ? 'var(--bad)' : pct < 30 ? 'var(--warn)' : 'var(--accent)';
+  $('dRange').textContent = `~${Math.round(left)} mi to empty · ${Math.round(usable)} mi before ${cfg.reserve}% reserve`;
+  const out = $('driveOut');
+  if (!drive.pos){ out.innerHTML = '<div class="muted" style="margin-top:10px">Start live mode to track your next E85 stop. Tap your fuel level whenever you check the gauge or fill up.</div>'; $('replanBtn').style.display = 'none'; return; }
+  $('replanBtn').style.display = plan ? 'block' : 'none';
+
+  let html = '';
+  const proj = plan ? projectPoint(drive.pos, plan.coords, plan.cum) : null;
+  if (proj && proj.off < 2){
+    const cur = proj.mile;
+    const ahead = plan.stations.filter(s => s.off <= cfg.detour && s.mile > cur + 0.3)
+      .map(s => Object.assign({}, s, { need: (s.mile - cur) + s.off * ROAD_FACTOR })).sort((a,b) => a.mile - b.mile);
+    const next = plan.result && plan.result.stops.find(s => s.type === 'e85' && s.mile > cur + 0.3);
+    const reachable = ahead.filter(s => s.need <= left - 0.5);
+    const lastSafe = ahead.filter(s => s.need <= usable).pop();
+    const toDest = plan.total - cur;
+    if (left - toDest >= reserveMi && (!next || next.mile > plan.total)){
+      html += `<div class="card"><div class="muted">Destination</div><div class="big">${Math.round(toDest)} mi</div><div class="muted">You'll make it with ~${Math.round((left - toDest)/range*100)}%. No more stops needed.</div></div>`;
+    } else if (next){
+      const need = (next.mile - cur) + next.station.off * ROAD_FACTOR;
+      const arrive = (left - need) / range * 100;
+      html += `<div class="card" style="border-left:4px solid var(--accent)">
+        <div class="muted">Next planned E85 stop</div>
+        <div class="big">${Math.round(need)} mi</div>
+        <h3 style="margin:4px 0 2px">${esc(next.station.name)}</h3>
+        <div class="muted">${esc(next.station.addr)}</div>
+        <div class="chips">${pctChip(arrive)}</div>
+        ${arrive < cfg.reserve ? `<div style="color:var(--bad);margin-top:6px">⚠️ You're using more fuel than planned. Stop at the last safe station below or re-plan.</div>` : ''}
+        ${navLinks(next.station.lat, next.station.lon)}</div>`;
+    }
+    if (lastSafe && (!next || lastSafe.id !== next.station.id)){
+      html += `<div class="card"><div class="muted">Farthest E85 before reserve</div>
+        <h3 style="margin:4px 0 2px">${esc(lastSafe.name)}</h3>
+        <div class="muted">${Math.round(lastSafe.need)} mi · ${esc(lastSafe.addr)}</div>${navLinks(lastSafe.lat, lastSafe.lon)}</div>`;
+    }
+    if (!reachable.length && left < toDest){
+      html += `<div class="card" style="color:var(--warn)">⚠️ No E85 on the route within your remaining range. Get regular gas at the next opportunity.</div>`;
+    }
+    html += `<div class="muted" style="margin-top:10px">${reachable.length} E85 station${reachable.length===1?'':'s'} reachable ahead on route · mile ${Math.round(cur)} of ${Math.round(plan.total)}</div>`;
+  } else {
+    if (plan) html += `<div class="card" style="color:var(--warn)">You're off the planned route. Showing the closest E85 stations instead.</div>`;
+    const list = drive.nearby.slice(0, 8);
+    if (!list.length) html += `<div class="card">No E85 stations found within ${Math.min(100, Math.round(range))} mi.</div>`;
+    list.forEach(s => {
+      const roadEst = s.dist * ROAD_FACTOR, ok = roadEst <= usable, tight = !ok && roadEst <= left;
+      html += `<div class="stop ${ok ? '' : 'gap'}"><h3>${esc(s.name)}</h3>
+        <div class="sub">${esc(s.addr)}</div>
+        <div class="chips"><span class="chip">~${Math.round(roadEst)} mi</span>
+        <span class="chip ${ok ? '' : tight ? 'low' : 'crit'}">${ok ? 'In range' : tight ? 'Below reserve' : 'Out of range'}</span></div>
+        ${navLinks(s.lat, s.lon)}</div>`;
+    });
+  }
+  out.innerHTML = html;
+}
+$('replanBtn').onclick = () => {
+  if (!drive.pos || !plan) return;
+  picked.from = { lat:drive.pos[0], lon:drive.pos[1], name:'My location' };
+  picked.to = plan.to;
+  $('from').value = 'My location'; $('to').value = plan.to.name.split(',').slice(0,3).join(',');
+  $('startPct').value = Math.round(currentFuelPct() ?? 100);
+  document.querySelector('[data-tab="plan"]').click();
+  $('planBtn').click();
+};
+
+// ---------- boot ----------
+initMap();
+map.on('dragstart', () => { map._userMoved = true; setTimeout(() => map._userMoved = false, 60000); });
+fillSettings();
+try {
+  const f = JSON.parse(lsGet('e85fuel') || 'null');
+  if (f && Date.now() - f.t < 12 * 3600 * 1000) drive.anchorPct = f.pct;   // remember gauge for 12h
+} catch(e){}
+updateDrive();
+</script>
+</body>
+</html>
