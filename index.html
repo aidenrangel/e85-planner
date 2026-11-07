@@ -797,7 +797,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <b>Reserve</b> is the minimum % the planner will let you arrive with. <b>Max detour</b> is how far off the route a station can be.<br><br>
       <b>API key:</b> station data comes from the U.S. DOE Alternative Fuels Data Center. <code>DEMO_KEY</code> is rate-limited, so get a free key in a minute at
       <a href="https://developer.nlr.gov/signup/" target="_blank" rel="noopener">developer.nlr.gov/signup</a>.<br><br>
-      Routing: OSRM · Geocoding: OpenStreetMap Nominatim · Map © OpenStreetMap, © CARTO.
+      Routing: OSRM · Geocoding: OpenStreetMap Nominatim · Map © OpenStreetMap contributors.
       Station listings can be out of date, so call ahead on long empty stretches.
     </p>
   </section>
@@ -910,10 +910,19 @@ const rangeMi = () => cfg.tank * cfg.mpg;
 // ---------- map ----------
 function initMap(){
   map = L.map('map', { zoomControl:false }).setView([37.35, -121.95], 7);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19, subdomains:'abcd',
-    attribution: '&copy; OpenStreetMap &copy; CARTO'
+  // OpenStreetMap tiles (no key). If they fail, switch to Esri's street map (also no key).
+  const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
+  let tileErrors = 0;
+  osm.on('tileerror', () => {
+    if (++tileErrors === 4){
+      map.removeLayer(osm);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19, attribution: 'Tiles &copy; Esri'
+      }).addTo(map);
+    }
+  });
   L.control.zoom({ position:'topright' }).addTo(map);
   stationLayer = L.layerGroup().addTo(map);
 }
