@@ -124,7 +124,7 @@
       <div><label>Reserve (%)</label><input id="reserve" type="number" inputmode="numeric"></div>
       <div><label>Max detour (mi)</label><input id="detour" type="number" step="0.5" inputmode="decimal"></div>
     </div>
-    <label>NREL API key</label>
+    <label>NLR (DOE) station API key</label>
     <input id="apikey" placeholder="DEMO_KEY" autocomplete="off" autocapitalize="off" spellcheck="false">
     <button class="btn" id="saveBtn">Save</button>
     <div class="status" id="setStatus"></div>
@@ -133,7 +133,7 @@
       Track a couple of fill-ups (miles ÷ gallons) and put your real number here, since it sets every range calculation.<br><br>
       <b>Reserve</b> is the minimum % the planner will let you arrive with. <b>Max detour</b> is how far off the route a station can be.<br><br>
       <b>API key:</b> station data comes from the U.S. DOE Alternative Fuels Data Center. <code>DEMO_KEY</code> is rate-limited, so get a free key in a minute at
-      <a href="https://developer.nrel.gov/signup/" target="_blank" rel="noopener">developer.nrel.gov/signup</a>.<br><br>
+      <a href="https://developer.nlr.gov/signup/" target="_blank" rel="noopener">developer.nlr.gov/signup</a>.<br><br>
       Routing: OSRM · Geocoding: OpenStreetMap Nominatim · Map © OpenStreetMap, © CARTO.
       Station listings can be out of date, so call ahead on long empty stretches.
     </p>
@@ -338,16 +338,16 @@ async function getRoute(a, b){
   return { coords: rt.geometry.coordinates.map(c => [c[1], c[0]]), miles: rt.distance / 1609.344, hours: rt.duration / 3600 };
 }
 function nrelError(r){
-  if (r.status === 429) return new Error('Station API limit hit. Add your free NREL key in the Truck tab.');
-  if (r.status === 403) return new Error('NREL API key rejected. Check it in the Truck tab.');
+  if (r.status === 429) return new Error('Station API limit hit. Add your free NLR key in the Truck tab.');
+  if (r.status === 403) return new Error('Station API key rejected. Check it in the Truck tab.');
   return new Error('Station lookup failed (' + r.status + ')');
 }
 async function stationsAlongRoute(coords, corridorMi){
   const pts = sampleCoords(coords, 250);
   const wkt = 'LINESTRING(' + pts.map(p => p[1].toFixed(5) + ' ' + p[0].toFixed(5)).join(', ') + ')';
-  const body = new URLSearchParams({ route:wkt, distance:String(corridorMi), fuel_type:'E85', status:'E', access:'public' });
+  const body = new URLSearchParams({ route:wkt, distance:String(corridorMi), fuel_type:'E85', status:'E', access:'public', limit:'all' });
   try {
-    const r = await fetch('https://developer.nrel.gov/api/alt-fuel-stations/v1/nearby-route.json?api_key=' + encodeURIComponent(apiKey()), { method:'POST', body });
+    const r = await fetch('https://developer.nlr.gov/api/alt-fuel-stations/v1/nearby-route.json?api_key=' + encodeURIComponent(apiKey()), { method:'POST', body });
     if (r.status === 429 || r.status === 403) throw nrelError(r);
     if (!r.ok) throw new Error('route-endpoint ' + r.status);
     const j = await r.json();
@@ -364,7 +364,7 @@ async function stationsBySampling(coords, corridorMi){
   for (let m = 0, i = 0; m <= total + spacing; m += spacing){
     while (i < cum.length - 1 && cum[i] < m) i++;
     const p = coords[i];
-    const url = `https://developer.nrel.gov/api/alt-fuel-stations/v1/nearest.json?api_key=${encodeURIComponent(apiKey())}&latitude=${p[0]}&longitude=${p[1]}&radius=${radius}&fuel_type=E85&status=E&access=public&limit=100`;
+    const url = `https://developer.nlr.gov/api/alt-fuel-stations/v1/nearest.json?api_key=${encodeURIComponent(apiKey())}&latitude=${p[0]}&longitude=${p[1]}&radius=${radius}&fuel_type=E85&status=E&access=public&limit=100`;
     const r = await fetch(url);
     if (!r.ok) throw nrelError(r);
     const j = await r.json();
@@ -373,7 +373,7 @@ async function stationsBySampling(coords, corridorMi){
   return [...seen.values()];
 }
 async function stationsNear(lat, lon, radius){
-  const url = `https://developer.nrel.gov/api/alt-fuel-stations/v1/nearest.json?api_key=${encodeURIComponent(apiKey())}&latitude=${lat}&longitude=${lon}&radius=${radius}&fuel_type=E85&status=E&access=public&limit=25`;
+  const url = `https://developer.nlr.gov/api/alt-fuel-stations/v1/nearest.json?api_key=${encodeURIComponent(apiKey())}&latitude=${lat}&longitude=${lon}&radius=${radius}&fuel_type=E85&status=E&access=public&limit=25`;
   const r = await fetch(url);
   if (!r.ok) throw nrelError(r);
   return (await r.json()).fuel_stations || [];
